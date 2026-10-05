@@ -1,10 +1,10 @@
 """Linha de comando: tabletcfg <subcomando>."""
 import argparse
 import sys
-import time
 
 from . import apply as ap
 from . import profiles
+from .devices import tablet_present
 from .monitors import read_layout
 from .proc import TabletError
 
@@ -34,17 +34,14 @@ def cmd_apply(args):
     if store.saved is None:
         print("tabletcfg: nenhum perfil salvo; nada a fazer", file=sys.stderr)
         return 0
-    if args.wait:
-        if not ap.wait_for_session(args.wait):
-            print("tabletcfg: sessão X não encontrada; nada aplicado", file=sys.stderr)
-            return 0
-        time.sleep(1.0)  # deixa o X registrar todos os nós da mesa recém-conectada
-        if ap.wait_for_tablet(args.wait) is None:
-            print("tabletcfg: mesa não encontrada; nada aplicado", file=sys.stderr)
-            return 0
+    if args.follow:
+        def log(msg):
+            print(f"tabletcfg: {msg}", file=sys.stderr, flush=True)
+        ap.follow_apply(lambda: _apply_named(store, store.saved), tablet_present, log=log)
+        return 0
     try:
         _apply_named(store, store.saved)
-    except ap.NoTablet as e:
+    except (ap.NoTablet, ap.PenNotReady) as e:
         print(f"tabletcfg: {e}", file=sys.stderr)
     return 0
 
@@ -118,8 +115,8 @@ def build_parser():
     a = sub.add_parser("apply", help="aplica um perfil")
     a.add_argument("name", nargs="?")
     a.add_argument("--saved", action="store_true", help="aplica o perfil salvo")
-    a.add_argument("--wait", type=float, default=0, metavar="SEG",
-                   help="espera a sessão X e a mesa por até SEG segundos")
+    a.add_argument("--follow", action="store_true",
+                   help="espera a caneta aparecer no X e aplica (usado pelo serviço)")
     a.set_defaults(func=cmd_apply)
     sub.add_parser("next", help="aplica o próximo perfil").set_defaults(func=cmd_next)
     sub.add_parser("reset", help="remove rotação e limites").set_defaults(func=cmd_reset)

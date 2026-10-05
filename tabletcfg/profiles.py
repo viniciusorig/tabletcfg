@@ -2,6 +2,7 @@
 import json
 import math
 import os
+import shutil
 import tempfile
 import tomllib
 from dataclasses import dataclass, field
@@ -148,3 +149,13 @@ def save(store: Store, path: Path | None = None) -> None:
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
+
+
+def backup(path: Path | None = None) -> Path | None:
+    """Copia o arquivo para .bak (usado antes de sobrescrever um arquivo que não carregou)."""
+    path = path or default_path()
+    if not path.exists():
+        return None
+    bak = path.with_name(path.name + ".bak")
+    shutil.copy2(path, bak)
+    return bak

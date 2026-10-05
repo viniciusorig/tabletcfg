@@ -15,6 +15,10 @@ class NoTablet(TabletError):
     pass
 
 
+class PenNotReady(TabletError):
+    pass
+
+
 @dataclass
 class ApplyResult:
     matrix: list[float]
@@ -38,19 +42,27 @@ def _require(tablet: Tablet | None) -> Tablet:
     tablet = tablet or find_tablet()
     if tablet is None:
         raise NoTablet("Mesa digitalizadora não encontrada (está conectada?)")
+    if not tablet.xinput_ids:
+        raise PenNotReady("Aproxime a caneta da mesa e tente de novo "
+                          "(o X só cria o dispositivo da caneta depois disso)")
     return tablet
+
+
+def _set_all(tablet: Tablet, matrix: list[float]) -> None:
+    for xid in tablet.xinput_ids:
+        set_ctm(xid, matrix)
 
 
 def apply_profile(profile: Profile, tablet: Tablet | None = None,
                   layout: Layout | None = None) -> ApplyResult:
     tablet = _require(tablet)
     res = compute_for_profile(profile, layout or read_layout(), tablet.size_mm)
-    set_ctm(tablet.xinput_id, res.matrix)
+    _set_all(tablet, res.matrix)
     return res
 
 
 def reset(tablet: Tablet | None = None) -> None:
-    set_ctm(_require(tablet).xinput_id, IDENTITY)
+    _set_all(_require(tablet), IDENTITY)
 
 
 def parse_env(text: str) -> dict[str, str]:
@@ -62,34 +74,30 @@ def parse_env(text: str) -> dict[str, str]:
     return env
 
 
-def wait_for_session(timeout: float, sleep=time.sleep, clock=time.monotonic) -> bool:
-    """Garante DISPLAY/XAUTHORITY no ambiente, buscando no systemd do usuário."""
-    deadline = clock() + timeout
-    while True:
-        if os.environ.get("DISPLAY"):
-            return True
-        env = parse_env(run(["systemctl", "--user", "show-environment"], check=False))
-        if env.get("DISPLAY"):
-            os.environ["DISPLAY"] = env["DISPLAY"]
-            if env.get("XAUTHORITY"):
-                os.environ["XAUTHORITY"] = env["XAUTHORITY"]
-            return True
-        if clock() >= deadline:
-            return False
-        sleep(0.5)
+def refresh_session() -> None:
+    """Copia DISPLAY/XAUTHORITY do systemd do usuário (pode mudar a cada login)."""
+    env = parse_env(run(["systemctl", "--user", "show-environment"], check=False))
+    for key in ("DISPLAY", "XAUTHORITY"):
+        if env.get(key):
+            os.environ[key] = env[key]
 
 
-def wait_for_tablet(timeout: float, sleep=time.sleep, clock=time.monotonic) -> Tablet | None:
-    deadline = clock() + timeout
-    while True:
+def follow_apply(apply_once, tablet_present, refresh=refresh_session, log=print,
+                 sleep=time.sleep, interval: float = 1.0) -> bool:
+    """Tenta aplicar até conseguir; desiste só se a mesa for desconectada."""
+    last = None
+    while tablet_present():
+        refresh()
         try:
-            if t := find_tablet():
-                return t
-        except TabletError:
-            pass  # X ainda subindo
-        if clock() >= deadline:
-            return None
-        sleep(0.5)
+            apply_once()
+            return True
+        except TabletError as e:
+            if str(e) != last:
+                last = str(e)
+                log(last)
+        sleep(interval)
+    log("Mesa desconectada; nada aplicado")
+    return False
 
 
 def _state_file() -> Path:

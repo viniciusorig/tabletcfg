@@ -17,6 +17,17 @@ Atalho no i3 para alternar perfis:
 
     bindsym $mod+t exec --no-startup-id tabletcfg next
 
+## Observações
+
+- O X só cria o dispositivo da caneta quando ela chega perto da mesa pela
+  primeira vez. Ao conectar a mesa (ou no login), o serviço fica esperando e
+  aplica o perfil assim que a caneta se aproximar; depois sai.
+- "Salvar" instala a regra udev com `pkexec`, que precisa de um agente polkit.
+  No i3 normalmente não há nenhum: rode `tabletcfg install-rule` num terminal
+  (a senha é pedida lá) ou instale `polkit-gnome` e adicione ao i3:
+
+      exec --no-startup-id /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1
+
 ## Arquivos
 
 - `~/.config/tabletcfg/profiles.toml` — perfis

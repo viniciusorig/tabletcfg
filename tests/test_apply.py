@@ -3,8 +3,11 @@ import unittest
 from unittest import mock
 
 from tabletcfg.apply import (
-    compute_for_profile, next_name, parse_env, wait_for_session,
+    PenNotReady, apply_profile, compute_for_profile, follow_apply, next_name, parse_env,
+    refresh_session,
 )
+from tabletcfg.devices import Tablet
+from tabletcfg.proc import CommandError
 from tabletcfg.matrix import transform
 from tabletcfg.monitors import Layout, Monitor
 from tabletcfg.profiles import Profile
@@ -47,24 +50,67 @@ class HelpersTest(unittest.TestCase):
         self.assertEqual(next_name(["a", "b"], "sumiu"), "a")
         self.assertIsNone(next_name([], None))
 
-    def test_wait_for_session_reads_systemd_env(self):
-        t = [0.0]
-        outputs = iter(["", "DISPLAY=:0\nXAUTHORITY=/tmp/xa\n"])
-        with mock.patch.dict(os.environ, {}, clear=True), \
-             mock.patch("tabletcfg.apply.run", side_effect=lambda *a, **k: next(outputs)):
-            ok = wait_for_session(5, sleep=lambda s: t.__setitem__(0, t[0] + s),
-                                  clock=lambda: t[0])
-            self.assertTrue(ok)
-            self.assertEqual(os.environ["DISPLAY"], ":0")
-            self.assertEqual(os.environ["XAUTHORITY"], "/tmp/xa")
+    def test_refresh_session_overrides_stale_display(self):
+        env = "DISPLAY=:1\nXAUTHORITY=/run/user/1000/novo\n"
+        with mock.patch.dict(os.environ, {"DISPLAY": ":0", "XAUTHORITY": "/velho"}, clear=True), \
+             mock.patch("tabletcfg.apply.run", return_value=env):
+            refresh_session()
+            self.assertEqual(os.environ["DISPLAY"], ":1")
+            self.assertEqual(os.environ["XAUTHORITY"], "/run/user/1000/novo")
 
-    def test_wait_for_session_times_out(self):
-        t = [0.0]
-        with mock.patch.dict(os.environ, {}, clear=True), \
+    def test_refresh_session_keeps_env_when_systemd_has_none(self):
+        with mock.patch.dict(os.environ, {"DISPLAY": ":0"}, clear=True), \
              mock.patch("tabletcfg.apply.run", return_value=""):
-            ok = wait_for_session(2, sleep=lambda s: t.__setitem__(0, t[0] + s),
-                                  clock=lambda: t[0])
+            refresh_session()
+            self.assertEqual(os.environ["DISPLAY"], ":0")
+
+
+class FollowTest(unittest.TestCase):
+    def run_follow(self, outcomes, present=None):
+        """outcomes: exceções (ou None = sucesso) devolvidas a cada tentativa."""
+        outcomes = iter(outcomes)
+        present = iter(present) if present is not None else None
+        log, attempts = [], []
+
+        def apply_once():
+            attempts.append(1)
+            exc = next(outcomes)
+            if exc:
+                raise exc
+
+        ok = follow_apply(apply_once, lambda: next(present) if present else True,
+                          refresh=lambda: None, log=log.append, sleep=lambda s: None)
+        return ok, log, len(attempts)
+
+    def test_applies_once_pen_appears(self):
+        ok, log, n = self.run_follow([PenNotReady("sem caneta")] * 3 + [None])
+        self.assertTrue(ok)
+        self.assertEqual(n, 4)
+        self.assertEqual(log, ["sem caneta"])  # mesma mensagem registrada uma vez só
+
+    def test_logs_each_distinct_error(self):
+        ok, log, _ = self.run_follow([CommandError("X recusou"), PenNotReady("sem caneta"), None])
+        self.assertEqual(log, ["X recusou", "sem caneta"])
+
+    def test_stops_when_tablet_unplugged(self):
+        ok, log, n = self.run_follow([PenNotReady("sem caneta")] * 5, present=[True, True, False])
         self.assertFalse(ok)
+        self.assertEqual(n, 2)
+        self.assertIn("desconectada", log[-1])
+
+
+class ApplyProfileTest(unittest.TestCase):
+    def test_pen_not_ready_before_first_proximity(self):
+        t = Tablet((), "T505", ("/dev/input/event27",), "08f2", "6811", (204.0, 136.0))
+        with self.assertRaises(PenNotReady) as cm:
+            apply_profile(Profile(target="all"), t, LAYOUT)
+        self.assertIn("caneta", str(cm.exception))
+
+    def test_sets_matrix_on_every_pen_device(self):
+        t = Tablet((23, 30), "T505", ("/dev/input/event27",), "08f2", "6811", (204.0, 136.0))
+        with mock.patch("tabletcfg.apply.set_ctm") as set_ctm:
+            apply_profile(Profile(target="all", keep_aspect=False), t, LAYOUT)
+        self.assertEqual([c.args[0] for c in set_ctm.call_args_list], [23, 30])
 
 
 if __name__ == "__main__":

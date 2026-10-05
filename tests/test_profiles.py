@@ -2,7 +2,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tabletcfg.profiles import Profile, ProfileError, Store, dumps, load, save, validate
+from tabletcfg.profiles import (
+    Profile, ProfileError, Store, backup, dumps, load, save, validate,
+)
 
 
 class ProfilesTest(unittest.TestCase):
@@ -65,6 +67,17 @@ class ProfilesTest(unittest.TestCase):
     def test_validate_rejects_empty_name(self):
         with self.assertRaises(ProfileError):
             validate("  ", Profile())
+
+    def test_backup_keeps_unreadable_file_before_overwrite(self):
+        self.path.parent.mkdir(parents=True)
+        self.path.write_text("[profiles.a]\nrotation = 45\n")
+        bak = backup(self.path)
+        save(Store("b", {"b": Profile()}), self.path)
+        self.assertEqual(bak.read_text(), "[profiles.a]\nrotation = 45\n")
+        self.assertEqual(bak.name, "profiles.toml.bak")
+
+    def test_backup_of_missing_file_is_none(self):
+        self.assertIsNone(backup(self.path))
 
     def test_dumps_is_valid_toml_with_floats(self):
         text = dumps(Store(None, {"a": Profile(screen_area=(0, 0, 1, 1))}))

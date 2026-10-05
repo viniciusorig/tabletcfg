@@ -29,11 +29,13 @@ class MainWindow(Gtk.Window):
         self.layout = Layout(1, 1, ())
         self.tablet = None
         self.status_msgs = []
+        self.load_failed = False
         try:
             self.store = profiles.load()
         except profiles.ProfileError as e:
             self.store = profiles.Store()
-            self.status_msgs.append(f"Erro ao ler perfis (será sobrescrito ao salvar): {e}")
+            self.load_failed = True
+            self.status_msgs.append(f"Erro ao ler perfis (uma cópia .bak será feita ao salvar): {e}")
         self.refresh_hardware()
         if not self.store.profiles:
             self.store.profiles["padrao"] = self._new_profile()
@@ -312,7 +314,7 @@ class MainWindow(Gtk.Window):
 
     def on_test(self, _b):
         try:
-            self.tablet = self.tablet or find_tablet()
+            self.tablet = find_tablet()
             warns = self._apply()
             self.show_status([f"Perfil '{self.current}' aplicado (teste, não salvo)", *warns])
         except TabletError as e:
@@ -322,6 +324,9 @@ class MainWindow(Gtk.Window):
         msgs = []
         self.store.saved = self.current
         try:
+            if self.load_failed and (bak := profiles.backup()):
+                msgs.append(f"Arquivo anterior guardado em {bak}")
+            self.load_failed = False
             profiles.save(self.store)
         except (TabletError, OSError) as e:
             self.show_status([f"Não foi possível salvar: {e}"])

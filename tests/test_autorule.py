@@ -1,8 +1,12 @@
 import unittest
 
+from pathlib import Path
+from unittest import mock
+
 from tabletcfg.autorule import (
-    parse_rule_ids, render_rules, render_service, rule_line, rule_needs_update,
+    install_rule, parse_rule_ids, render_rules, render_service, rule_line, rule_needs_update,
 )
+from tabletcfg.proc import CommandError
 
 
 class AutoruleTest(unittest.TestCase):
@@ -29,8 +33,19 @@ class AutoruleTest(unittest.TestCase):
 
     def test_service(self):
         s = render_service("/home/u/.local/bin/tabletcfg")
-        self.assertIn("Type=oneshot", s)
-        self.assertIn("ExecStart=/home/u/.local/bin/tabletcfg apply --saved --wait 20", s)
+        # simple: o processo espera a caneta aparecer, sem o timeout de 90 s do oneshot
+        self.assertIn("Type=simple", s)
+        self.assertIn("ExecStart=/home/u/.local/bin/tabletcfg apply --saved --follow", s)
+
+    def test_no_polkit_agent_gives_actionable_message(self):
+        err = CommandError("'pkexec ...' falhou (127): Error executing command as another user: "
+                           "No authentication agent found.")
+        with mock.patch("tabletcfg.autorule.run", side_effect=err):
+            with self.assertRaises(CommandError) as cm:
+                install_rule("08f2", "6811", Path("/nao/existe.rules"))
+        msg = str(cm.exception)
+        self.assertIn("tabletcfg install-rule", msg)
+        self.assertIn("polkit-gnome", msg)
 
 
 if __name__ == "__main__":

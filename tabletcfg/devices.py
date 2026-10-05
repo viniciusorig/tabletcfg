@@ -1,4 +1,9 @@
-"""Encontra a caneta da mesa no xinput e aplica a matriz."""
+"""Encontra a mesa (via udev) e os dispositivos da caneta no xinput.
+
+O xf86-input-libinput só cria o dispositivo "... Pen (0)" no X quando a caneta
+chega perto da mesa pela primeira vez; por isso a identidade da mesa vem do
+udev e a lista de ids do xinput pode estar vazia.
+"""
 import re
 from dataclasses import dataclass
 
@@ -6,15 +11,14 @@ from .proc import run
 
 SLAVE_POINTER_RE = re.compile(r"↳\s+(.*?)\s+id=(\d+)\s+\[slave\s+pointer")
 NODE_RE = re.compile(r'Device Node \(\d+\):\s+"([^"]+)"')
-PEN_RE = re.compile(r"\b(pen|stylus)\b", re.IGNORECASE)
 CTM_PROP = "Coordinate Transformation Matrix"
 
 
 @dataclass(frozen=True)
 class Tablet:
-    xinput_id: int
+    xinput_ids: tuple[int, ...]  # ponteiros da caneta; vazio até a 1ª aproximação
     name: str
-    node: str | None
+    nodes: tuple[str, ...]
     vendor: str | None
     product: str | None
     size_mm: tuple[float, float] | None
@@ -28,45 +32,65 @@ def parse_pointer_devices(text: str) -> list[tuple[int, str]]:
     return out
 
 
-def order_candidates(devs: list[tuple[int, str]]) -> list[tuple[int, str]]:
-    devs = [d for d in devs if "XTEST" not in d[1]]
-    return sorted(devs, key=lambda d: not PEN_RE.search(d[1]))
-
-
 def parse_device_node(text: str) -> str | None:
     m = NODE_RE.search(text)
     return m.group(1) if m else None
 
 
-def tablet_from_udev(xinput_id: int, name: str, node: str, props: dict) -> Tablet | None:
-    if props.get("ID_INPUT_TABLET") != "1" or props.get("ID_INPUT_TABLET_PAD") == "1":
-        return None
-    size = None
+def _size(props: dict) -> tuple[float, float] | None:
     try:
         w, h = float(props["ID_INPUT_WIDTH_MM"]), float(props["ID_INPUT_HEIGHT_MM"])
-        if w > 0 and h > 0:
-            size = (w, h)
     except (KeyError, ValueError):
-        pass
-    return Tablet(xinput_id, name, node, props.get("ID_VENDOR_ID"),
-                  props.get("ID_MODEL_ID"), size)
+        return None
+    return (w, h) if w > 0 and h > 0 else None
 
 
-def _udev_props(node: str) -> dict:
+def select_tablet(udev_devs: list[dict], pointers: list[tuple[int, str, str | None]]) -> Tablet | None:
+    """udev_devs: propriedades dos dispositivos de input; pointers: (id, nome, nó) do xinput."""
+    tabs = [d for d in udev_devs
+            if d.get("ID_INPUT_TABLET") == "1" and d.get("ID_INPUT_TABLET_PAD") != "1"
+            and d.get("DEVNAME", "").startswith("/dev/input/event")]
+    if not tabs:
+        return None
+    ident = (tabs[0].get("ID_VENDOR_ID"), tabs[0].get("ID_MODEL_ID"))
+    tabs = sorted((d for d in tabs if (d.get("ID_VENDOR_ID"), d.get("ID_MODEL_ID")) == ident),
+                  key=lambda d: d["DEVNAME"])
+    nodes = tuple(d["DEVNAME"] for d in tabs)
+    ids = tuple(xid for xid, _, node in pointers if node in nodes)
+    pen_nodes = {node for _, _, node in pointers if node in nodes}
+    sized = [d for d in tabs if _size(d)]
+    sized.sort(key=lambda d: d["DEVNAME"] not in pen_nodes)
+    name = tabs[0].get("NAME", "").strip('"') or "Mesa digitalizadora"
+    return Tablet(ids, name, nodes, ident[0], ident[1], _size(sized[0]) if sized else None)
+
+
+def _udev_devices() -> list[dict]:
     import pyudev
-    try:
-        dev = pyudev.Devices.from_device_file(pyudev.Context(), node)
-    except (pyudev.DeviceNotFoundError, OSError, ValueError):
-        return {}
-    return dict(dev.properties)
+    ctx = pyudev.Context()
+    out = []
+    for dev in ctx.list_devices(subsystem="input", ID_INPUT_TABLET="1"):
+        props = dict(dev.properties)
+        if dev.parent is not None and "NAME" in dev.parent.properties:
+            props.setdefault("NAME", dev.parent.properties["NAME"])
+        out.append(props)
+    return out
+
+
+def tablet_present() -> bool:
+    """Só udev, sem X: usado pelo serviço para saber se continua esperando."""
+    return select_tablet(_udev_devices(), []) is not None
 
 
 def find_tablet() -> Tablet | None:
-    for xid, name in order_candidates(parse_pointer_devices(run(["xinput", "list"]))):
-        node = parse_device_node(run(["xinput", "list-props", str(xid)], check=False))
-        if node and (t := tablet_from_udev(xid, name, node, _udev_props(node))):
-            return t
-    return None
+    udev = _udev_devices()
+    if select_tablet(udev, []) is None:
+        return None
+    pointers = []
+    for xid, name in parse_pointer_devices(run(["xinput", "list"])):
+        if "XTEST" not in name:
+            node = parse_device_node(run(["xinput", "list-props", str(xid)], check=False))
+            pointers.append((xid, name, node))
+    return select_tablet(udev, pointers)
 
 
 def set_ctm(xinput_id: int, matrix: list[float]) -> None:

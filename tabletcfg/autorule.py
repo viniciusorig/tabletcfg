@@ -11,6 +11,9 @@ from .proc import CommandError, TabletError, run
 RULES_PATH = Path("/etc/udev/rules.d/99-tabletcfg.rules")
 SERVICE_NAME = "tabletcfg-apply.service"
 HEADER = "# Gerado por tabletcfg — não editar à mão\n"
+NO_AGENT_HELP = ("Nenhum agente polkit rodando para pedir a senha. Rode 'tabletcfg install-rule' "
+                 "num terminal, ou instale polkit-gnome e adicione ao i3: exec --no-startup-id "
+                 "/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1")
 IDS_RE = re.compile(r'ATTRS\{idVendor\}=="(\w+)".*ATTRS\{idProduct\}=="(\w+)"')
 
 
@@ -38,8 +41,8 @@ def render_service(exe: str) -> str:
         "[Unit]\n"
         "Description=Aplicar perfil salvo da mesa digitalizadora\n\n"
         "[Service]\n"
-        "Type=oneshot\n"
-        f"ExecStart={exe} apply --saved --wait 20\n"
+        "Type=simple\n"
+        f"ExecStart={exe} apply --saved --follow\n"
     )
 
 
@@ -75,6 +78,10 @@ def install_rule(vendor: str, product: str, rules_path: Path = RULES_PATH) -> No
         run(["pkexec", "sh", "-c",
              'install -m644 "$1" "$2" && udevadm control --reload-rules',
              "sh", tmp, str(rules_path)])
+    except CommandError as e:
+        if "authentication agent" in str(e):
+            raise CommandError(NO_AGENT_HELP) from None
+        raise
     finally:
         Path(tmp).unlink(missing_ok=True)
 
