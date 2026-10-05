@@ -261,6 +261,29 @@ class MainWindow(Gtk.Window):
         self.current = sorted(self.store.profiles)[combo.get_active()]
         self.load_profile()
 
+    def ask_password(self, retry: bool):
+        """Pede a senha do sudo; devolve None se cancelado. A senha não é guardada."""
+        d = Gtk.Dialog(title="Senha de administrador", transient_for=self, modal=True)
+        d.add_buttons("Cancelar", Gtk.ResponseType.CANCEL, "OK", Gtk.ResponseType.OK)
+        d.set_default_response(Gtk.ResponseType.OK)
+        box = d.get_content_area()
+        box.set_spacing(8)
+        box.set_border_width(12)
+        text = ("Senha incorreta, tente de novo." if retry else
+                "Para reaplicar o perfil sozinho ao conectar a mesa, é preciso instalar\n"
+                "uma regra do sistema (só desta vez). Digite sua senha:")
+        box.add(Gtk.Label(label=text, xalign=0))
+        entry = Gtk.Entry(visibility=False, activates_default=True,
+                          input_purpose=Gtk.InputPurpose.PASSWORD)
+        box.add(entry)
+        d.show_all()
+        resp = d.run()
+        password = entry.get_text()
+        d.destroy()
+        while Gtk.events_pending():  # some o diálogo antes do sudo rodar
+            Gtk.main_iteration()
+        return password if resp == Gtk.ResponseType.OK and password else None
+
     def ask_name(self, title, initial=""):
         d = Gtk.Dialog(title=title, transient_for=self, modal=True)
         d.add_buttons("Cancelar", Gtk.ResponseType.CANCEL, "OK", Gtk.ResponseType.OK)
@@ -337,7 +360,7 @@ class MainWindow(Gtk.Window):
             msgs += self._apply()
         except TabletError as e:
             msgs.append(str(e))
-        msgs += autorule.ensure_auto_apply(self.tablet)
+        msgs += autorule.ensure_auto_apply(self.tablet, self.ask_password)
         self.reload_combo()
         self.show_status(msgs)
 
