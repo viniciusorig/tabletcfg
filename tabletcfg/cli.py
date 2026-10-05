@@ -94,6 +94,21 @@ def cmd_gui(args):
     return run_gui()
 
 
+def cmd_install_rule(args):
+    from . import autorule
+    from .devices import find_tablet
+    _warn(autorule.ensure_auto_apply(find_tablet()))
+    print(f"Serviço: {autorule.service_path()}\nRegra: {autorule.RULES_PATH}")
+    return 0
+
+
+def cmd_uninstall_rule(args):
+    from . import autorule
+    autorule.uninstall()
+    print("Regra automática removida")
+    return 0
+
+
 def build_parser():
     p = argparse.ArgumentParser(prog="tabletcfg", description="Configura a mesa digitalizadora")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -109,6 +124,8 @@ def build_parser():
     sub.add_parser("next", help="aplica o próximo perfil").set_defaults(func=cmd_next)
     sub.add_parser("reset", help="remove rotação e limites").set_defaults(func=cmd_reset)
     sub.add_parser("identify", help="mostra o número de cada monitor").set_defaults(func=cmd_identify)
+    sub.add_parser("install-rule", help="instala a reaplicação automática").set_defaults(func=cmd_install_rule)
+    sub.add_parser("uninstall-rule", help="remove a reaplicação automática").set_defaults(func=cmd_uninstall_rule)
     return p
 
 
