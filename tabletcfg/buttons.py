@@ -1,7 +1,12 @@
 """Botões da mesa: ações por botão, mapa de botões por modelo e remapeamento (puro)."""
+import json
+import os
+import tempfile
+import tomllib
 from dataclasses import dataclass
+from pathlib import Path
 
-from .keys import ComboError, combo_label, format_combo, parse_combo
+from .keys import ComboError, code_of, combo_label, format_combo, name_of, parse_combo
 from .proc import TabletError
 
 
@@ -60,3 +65,122 @@ def action_label(a: Action) -> str:
     if a.kind == "command":
         return f"Comando: {a.arg}"
     return "Desativado"
+
+
+Signature = frozenset[int]
+
+
+@dataclass(frozen=True)
+class ButtonMap:
+    """Assinaturas dos botões em ordem física: mesa e caneta (da ponta para cima)."""
+    tablet: tuple[Signature, ...]
+    pen: tuple[Signature, ...]
+
+    def ids(self) -> list[str]:
+        return ([f"tablet{i}" for i in range(1, len(self.tablet) + 1)]
+                + [f"pen{i}" for i in range(1, len(self.pen) + 1)])
+
+    def signature(self, button: str) -> Signature | None:
+        for prefix, sigs in (("tablet", self.tablet), ("pen", self.pen)):
+            if button.startswith(prefix) and button[len(prefix):].isdigit():
+                i = int(button[len(prefix):])
+                return sigs[i - 1] if 1 <= i <= len(sigs) else None
+        return None
+
+    def lookup(self, sig: Signature) -> str | None:
+        for button in self.ids():
+            if self.signature(button) == sig:
+                return button
+        return None
+
+    @staticmethod
+    def label(button: str) -> str:
+        if button.startswith("tablet"):
+            return f"Mesa {button[6:]}"
+        if button.startswith("pen"):
+            return f"Caneta {button[3:]}"
+        return button
+
+
+def _sig(*names: str) -> Signature:
+    return frozenset(code_of(n) for n in names)
+
+
+# Capturado em 2026-10-07 (SZ PING-IT T505, clone do 10moon 1060N).
+BUILTIN = {
+    "08f2:6811": ButtonMap(
+        tablet=(_sig("ctrl", "kp_subtract"), _sig("ctrl", "kp_add"), _sig("bracketleft"),
+                _sig("bracketright"), _sig("tab"), _sig("space"), _sig("ctrl"), _sig("alt")),
+        pen=(_sig("ctrl", "y"), _sig("ctrl", "z")),
+    ),
+}
+
+
+def devices_path() -> Path:
+    base = os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config"
+    return Path(base) / "tabletcfg" / "devices.toml"
+
+
+def device_key(vendor: str, product: str) -> str:
+    return f"{vendor.lower()}:{product.lower()}"
+
+
+def _parse_sigs(key: str, field: str, raw) -> tuple[Signature, ...]:
+    try:
+        if not isinstance(raw, list):
+            raise ButtonError("esperado uma lista")
+        out = []
+        for item in raw:
+            if not isinstance(item, list) or not item or not all(isinstance(n, str) for n in item):
+                raise ButtonError(f"botão inválido {item!r}")
+            out.append(frozenset(code_of(n) for n in item))
+        return tuple(out)
+    except (ButtonError, ComboError) as e:
+        raise ButtonError(f"devices.toml, [{key}] {field}: {e}") from None
+
+
+def load_maps(path: Path | None = None) -> dict[str, ButtonMap]:
+    path = path or devices_path()
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except tomllib.TOMLDecodeError as e:
+        raise ButtonError(f"{path}: {e}") from None
+    maps = {}
+    for key, d in data.items():
+        if not isinstance(d, dict):
+            raise ButtonError(f"devices.toml: [{key}] deve ser uma tabela")
+        maps[key.lower()] = ButtonMap(_parse_sigs(key, "tablet", d.get("tablet", [])),
+                                      _parse_sigs(key, "pen", d.get("pen", [])))
+    return maps
+
+
+def _dump_sigs(sigs) -> str:
+    items = ("[" + ", ".join(json.dumps(name_of(c)) for c in sorted(sig)) + "]" for sig in sigs)
+    return "[" + ", ".join(items) + "]"
+
+
+def save_maps(maps: dict[str, ButtonMap], path: Path | None = None) -> None:
+    path = path or devices_path()
+    out = ["# Botões aprendidos por modelo de mesa (gerado por tabletcfg)"]
+    for key, m in sorted(maps.items()):
+        out += ["", f"[{json.dumps(key)}]", f"tablet = {_dump_sigs(m.tablet)}",
+                f"pen = {_dump_sigs(m.pen)}"]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".devices-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write("\n".join(out) + "\n")
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def map_for(vendor: str | None, product: str | None, path: Path | None = None) -> ButtonMap | None:
+    """Mapa do modelo: o aprendido (devices.toml) tem prioridade sobre o embutido."""
+    if not (vendor and product):
+        return None
+    key = device_key(vendor, product)
+    return load_maps(path).get(key) or BUILTIN.get(key)
