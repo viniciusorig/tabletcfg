@@ -28,4 +28,5 @@ package() {
   install -Dm644 data/tabletcfg.desktop "$pkgdir/usr/share/applications/tabletcfg.desktop"
   install -Dm644 data/70-tabletcfg-uinput.rules \
     "$pkgdir/usr/lib/udev/rules.d/70-tabletcfg-uinput.rules"
+  install -Dm644 data/tabletcfg.1 "$pkgdir/usr/share/man/man1/tabletcfg.1"
 }

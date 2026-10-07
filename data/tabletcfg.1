@@ -1,0 +1,82 @@
+.TH TABLETCFG 1 "2026-10-07" "tabletcfg 0.1.0" "Comandos do usuário"
+.SH NOME
+tabletcfg \- configura mesa digitalizadora no X11 (driver libinput)
+.SH SINOPSE
+.B tabletcfg
+.I comando
+.RI [ opções ]
+.SH DESCRIÇÃO
+.B tabletcfg
+configura uma mesa digitalizadora em sessões X11 com o driver libinput:
+monitor ou área de tela, área útil da mesa, rotação, proporção, curva de
+pressão da caneta e ação de cada botão da mesa e da caneta. As configurações
+ficam em perfis e são reaplicadas sozinhas ao conectar a mesa (regra udev e
+serviços systemd do usuário, criados no primeiro "Salvar" da janela).
+.SH COMANDOS
+.TP
+.B gui
+Abre a janela de configuração.
+.TP
+.B list
+Lista os perfis; o marcado com * é o salvo (automático).
+.TP
+.B monitors
+Lista os monitores detectados.
+.TP
+.BI apply " perfil"
+Aplica um perfil.
+.B apply \-\-saved \-\-follow
+é usado pelo serviço automático.
+.TP
+.B next
+Aplica o próximo perfil (útil num atalho de teclado).
+.TP
+.B reset
+Remove rotação, limites e curva de pressão.
+.TP
+.B identify
+Mostra o número de cada monitor na tela.
+.TP
+.BR pressure " [" \fIfirmeza\fR "] [" \-\-curve " \fIx1 y1 x2 y2\fR] [" \-\-profile " \fInome\fR]"
+Sem argumentos, mostra a curva do perfil e da caneta. A firmeza é
+.BR muito\-macia ", " macia ", " normal ", " firme ", " muito\-firme
+ou um número de \-100 (macia) a 100 (firme).
+.TP
+.BR buttons " [" \-\-follow ]
+Mostra o que cada botão faz no perfil ativo. Com
+.BR \-\-follow ,
+remapeia os botões enquanto a mesa estiver conectada (usado pelo serviço).
+.TP
+.B install\-rule
+Instala a regra udev e os serviços de reaplicação automática (usa sudo).
+.TP
+.B uninstall\-rule
+Remove a regra e os serviços.
+.SH ARQUIVOS
+.TP
+.I ~/.config/tabletcfg/profiles.toml
+Perfis.
+.TP
+.I ~/.config/tabletcfg/devices.toml
+Botões aprendidos por modelo de mesa.
+.TP
+.I /etc/udev/rules.d/99\-tabletcfg.rules
+Regra que inicia os serviços ao conectar a mesa.
+.TP
+.I ~/.config/systemd/user/tabletcfg\-apply.service
+.TQ
+.I ~/.config/systemd/user/tabletcfg\-buttons.service
+Serviços do usuário que reaplicam o perfil e remapeiam os botões.
+.SH NOTAS
+Para remapear os botões, o usuário precisa ler o dispositivo de entrada da
+mesa (grupo
+.BR input )
+e escrever em
+.IR /dev/uinput .
+Wayland não é suportado.
+.SH AUTOR
+viniciusorig <vinicius100loucototal@gmail.com>
+.SH VEJA TAMBÉM
+.BR xinput (1),
+.BR xrandr (1),
+.BR libinput (4)

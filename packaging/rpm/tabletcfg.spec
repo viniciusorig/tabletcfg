@@ -42,6 +42,7 @@ profiles and reapplied automatically when the tablet is plugged in.
 %pyproject_save_files -l tabletcfg
 install -Dm644 data/tabletcfg.desktop %{buildroot}%{_datadir}/applications/tabletcfg.desktop
 install -Dm644 data/70-tabletcfg-uinput.rules %{buildroot}%{_udevrulesdir}/70-tabletcfg-uinput.rules
+install -Dm644 data/tabletcfg.1 %{buildroot}%{_mandir}/man1/tabletcfg.1
 
 %check
 desktop-file-validate %{buildroot}%{_datadir}/applications/tabletcfg.desktop
@@ -52,6 +53,7 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/tabletcfg.desktop
 %{_bindir}/tabletcfg
 %{_datadir}/applications/tabletcfg.desktop
 %{_udevrulesdir}/70-tabletcfg-uinput.rules
+%{_mandir}/man1/tabletcfg.1*
 
 %changelog
 * Wed Oct 07 2026 viniciusorig <vinicius100loucototal@gmail.com> - 0.1.0-1
