@@ -1,0 +1,2 @@
+data/tabletcfg.desktop usr/share/applications/
+data/70-tabletcfg-uinput.rules usr/lib/udev/rules.d/

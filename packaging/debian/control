@@ -1,0 +1,34 @@
+Source: tabletcfg
+Section: utils
+Priority: optional
+Maintainer: viniciusorig <vinicius100loucototal@gmail.com>
+Build-Depends: debhelper-compat (= 13),
+               dh-python,
+               pybuild-plugin-pyproject,
+               python3-all (>= 3.11),
+               python3-setuptools,
+               python3-wheel
+Standards-Version: 4.7.0
+Homepage: https://github.com/viniciusorig/tabletcfg
+Rules-Requires-Root: no
+
+Package: tabletcfg
+Architecture: all
+Depends: ${misc:Depends},
+         ${python3:Depends},
+         python3-gi,
+         gir1.2-gtk-3.0,
+         python3-pyudev,
+         xinput,
+         x11-xserver-utils,
+         xserver-xorg-input-libinput,
+         sudo,
+         systemd
+Description: graphics tablet configurator for X11 (libinput)
+ GTK window and command line to configure a graphics tablet under X11 with
+ the libinput driver: map the tablet to a monitor or screen area, crop the
+ tablet area, rotate, keep aspect ratio, adjust the pen pressure curve and
+ remap tablet and pen buttons (shortcut, mouse click, scroll, command).
+ .
+ Settings are kept in profiles and reapplied automatically when the tablet
+ is plugged in (udev rule + systemd user services).

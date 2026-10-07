@@ -1,0 +1,3 @@
+# tabletcfg: permite ao usuário da sessão criar o dispositivo virtual usado no
+# remapeamento dos botões (/dev/uinput). uaccess precisa vir antes de 73-seat-late.
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Tablet configuration
+Name[pt_BR]=Configuração da mesa digitalizadora
+Comment=Configure screen area, rotation, pen pressure and buttons
+Comment[pt_BR]=Configure área de tela, rotação, pressão da caneta e botões
+Exec=tabletcfg gui
+Icon=input-tablet
+Terminal=false
+Categories=Settings;HardwareSettings;
+Keywords=tablet;pen;stylus;wacom;mesa;caneta;

@@ -1,0 +1,6 @@
+tabletcfg (0.1.0-1) unstable; urgency=medium
+
+  * Primeira versão: área de tela/mesa, rotação, proporção, curva de
+    pressão da caneta, remapeamento de botões e reaplicação automática.
+
+ -- viniciusorig <vinicius100loucototal@gmail.com>  Wed, 07 Oct 2026 12:00:00 -0300

@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tabletcfg"
+version = "0.1.0"
+description = "Graphics tablet configurator for X11 (libinput): area, rotation, pressure curve and button remapping"
+readme = "README.md"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "viniciusorig", email = "vinicius100loucototal@gmail.com" }]
+requires-python = ">=3.11"
+dependencies = ["PyGObject", "pyudev"]
+classifiers = [
+    "Environment :: X11 Applications :: GTK",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Hardware",
+]
+
+[project.scripts]
+tabletcfg = "tabletcfg.cli:main"
+
+[tool.setuptools]
+packages = ["tabletcfg"]
