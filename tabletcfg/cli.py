@@ -136,6 +136,27 @@ def cmd_pressure(args):
     return 0
 
 
+def cmd_buttons(args):
+    from . import remap
+    from .buttons import ButtonMap, action_label
+    from .keys import combo_label
+    if args.follow:
+        return remap.follow_buttons()
+    bmap = remap.current_map()
+    if bmap is None:
+        raise TabletError("Botões desta mesa desconhecidos (ou mesa desconectada); "
+                          "use 'Aprender botões' na janela")
+    store = profiles.load()
+    name, actions, warnings = remap.actions_for(bmap, store, ap.read_last())
+    _warn(warnings)
+    print(f"Perfil '{name}':" if name else "Nenhum perfil ativo:")
+    for button in bmap.ids():
+        action = actions.get(button)
+        label = action_label(action) if action else "Original"
+        print(f"  {ButtonMap.label(button):<10} {combo_label(bmap.signature(button)):<12} → {label}")
+    return 0
+
+
 def cmd_gui(args):
     from .gui import run_gui
     return run_gui()
@@ -176,6 +197,10 @@ def build_parser():
                     help="curva livre (pontos de controle em 0..1)")
     pr.add_argument("--profile", help="perfil a alterar (padrão: o ativo)")
     pr.set_defaults(func=cmd_pressure)
+    b = sub.add_parser("buttons", help="mostra o que cada botão faz no perfil ativo")
+    b.add_argument("--follow", action="store_true",
+                   help="remapeia os botões enquanto a mesa estiver conectada (usado pelo serviço)")
+    b.set_defaults(func=cmd_buttons)
     sub.add_parser("reset", help="remove rotação, limites e curva de pressão").set_defaults(func=cmd_reset)
     sub.add_parser("identify", help="mostra o número de cada monitor").set_defaults(func=cmd_identify)
     sub.add_parser("install-rule", help="instala a reaplicação automática").set_defaults(func=cmd_install_rule)

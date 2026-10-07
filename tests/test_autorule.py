@@ -4,8 +4,8 @@ from pathlib import Path
 from unittest import mock
 
 from tabletcfg.autorule import (
-    WrongPassword, ensure_auto_apply, install_rule, parse_rule_ids, render_rules,
-    render_service, rule_line, rule_needs_update,
+    WrongPassword, buttons_rule_line, ensure_auto_apply, install_rule, parse_rule_ids,
+    render_buttons_service, render_rules, render_service, rule_line, rule_needs_update,
 )
 from tabletcfg.devices import Tablet
 from tabletcfg.proc import CommandError
@@ -23,6 +23,26 @@ class AutoruleTest(unittest.TestCase):
         self.assertIn('ENV{SYSTEMD_USER_WANTS}+="tabletcfg-apply.service"', line)
         self.assertIn('TAG+="systemd"', line)
         self.assertNotIn("\n", line)
+
+    def test_buttons_rule_line_matches_key_nodes(self):
+        line = buttons_rule_line("08f2", "6811")
+        self.assertIn('ENV{ID_INPUT_KEY}=="1"', line)
+        self.assertIn('ATTRS{idVendor}=="08f2"', line)
+        self.assertIn('ENV{SYSTEMD_USER_WANTS}+="tabletcfg-buttons.service"', line)
+
+    def test_rules_include_buttons_line(self):
+        text = render_rules({("08f2", "6811")})
+        self.assertIn(rule_line("08f2", "6811"), text)
+        self.assertIn(buttons_rule_line("08f2", "6811"), text)
+
+    def test_old_rule_without_buttons_needs_update(self):
+        old = "# Gerado por tabletcfg — não editar à mão\n" + rule_line("08f2", "6811") + "\n"
+        self.assertTrue(rule_needs_update(old, "08f2", "6811"))
+
+    def test_buttons_service(self):
+        s = render_buttons_service("/home/u/.local/bin/tabletcfg")
+        self.assertIn("Type=simple", s)
+        self.assertIn("ExecStart=/home/u/.local/bin/tabletcfg buttons --follow", s)
 
     def test_render_and_parse_round_trip(self):
         ids = {("08f2", "6811"), ("256c", "006d")}
@@ -69,9 +89,16 @@ class AutoruleTest(unittest.TestCase):
 
 class EnsureAutoApplyTest(unittest.TestCase):
     def setUp(self):
-        p = mock.patch("tabletcfg.autorule.install_service")
-        p.start()
-        self.addCleanup(p.stop)
+        for name in ("install_service", "start_buttons_service"):
+            p = mock.patch(f"tabletcfg.autorule.{name}")
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_starts_buttons_service_when_tablet_connected(self):
+        with mock.patch("tabletcfg.autorule._read", return_value=render_rules({("08f2", "6811")})):
+            ensure_auto_apply(TABLET, None, NOWHERE)
+        from tabletcfg import autorule
+        autorule.start_buttons_service.assert_called_once()
 
     def test_retries_after_wrong_password(self):
         asked = []

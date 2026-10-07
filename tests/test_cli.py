@@ -99,5 +99,40 @@ class PressureCommandTest(unittest.TestCase):
         self.assertIn("caneta não detectada", out)
 
 
+
+class ButtonsCommandTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        env = mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": self.dir.name})
+        env.start()
+        self.addCleanup(env.stop)
+        self.addCleanup(self.dir.cleanup)
+        profiles.save(Store("padrao", {"padrao": Profile(buttons={
+            "tablet5": "key ctrl+shift+s", "pen1": "click right", "tablet20": "disable"})}))
+
+    def run_cli(self, bmap):
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch("tabletcfg.cli.ap.read_last", return_value=None), \
+             mock.patch("tabletcfg.remap.current_map", return_value=bmap), \
+             contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = main(["buttons"])
+        return code, out.getvalue(), err.getvalue()
+
+    def test_lists_buttons_of_active_profile(self):
+        from tabletcfg.buttons import BUILTIN
+        code, out, err = self.run_cli(BUILTIN["08f2:6811"])
+        self.assertEqual(code, 0)
+        self.assertIn("Perfil 'padrao'", out)
+        self.assertRegex(out, r"Mesa 5 +Tab +→ Atalho Ctrl\+Shift\+S")
+        self.assertRegex(out, r"Mesa 1 +Ctrl\+KP − +→ Original")
+        self.assertRegex(out, r"Caneta 1 +Ctrl\+Y +→ Clique direito")
+        self.assertIn("tablet20", err)
+
+    def test_unknown_tablet(self):
+        code, _, err = self.run_cli(None)
+        self.assertEqual(code, 1)
+        self.assertIn("Aprender", err)
+
+
 if __name__ == "__main__":
     unittest.main()

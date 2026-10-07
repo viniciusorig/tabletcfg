@@ -77,6 +77,26 @@ def select_tablet(udev_devs: list[dict], pointers: list[tuple[int, str, str | No
     return Tablet(ids, name, nodes, ident[0], ident[1], _size(sized[0]) if sized else None)
 
 
+def select_button_nodes(udev_devs: list[dict], vendor: str, product: str) -> list[str]:
+    """Nós evdev de onde vêm os botões: teclado ou pad do mesmo modelo (nunca a caneta)."""
+    out = []
+    for d in udev_devs:
+        if ((d.get("ID_VENDOR_ID"), d.get("ID_MODEL_ID")) != (vendor, product)
+                or not d.get("DEVNAME", "").startswith("/dev/input/event")):
+            continue
+        pad = d.get("ID_INPUT_TABLET_PAD") == "1"
+        if pad or (d.get("ID_INPUT_KEY") == "1" and d.get("ID_INPUT_TABLET") != "1"
+                   and d.get("ID_INPUT_MOUSE") != "1"):
+            out.append(d["DEVNAME"])
+    return sorted(out)
+
+
+def button_nodes(tablet: Tablet) -> list[str]:
+    import pyudev
+    devs = [dict(dev.properties) for dev in pyudev.Context().list_devices(subsystem="input")]
+    return select_button_nodes(devs, tablet.vendor, tablet.product)
+
+
 def _udev_devices() -> list[dict]:
     import pyudev
     ctx = pyudev.Context()

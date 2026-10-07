@@ -1,7 +1,8 @@
 import unittest
 
 from tabletcfg.devices import (
-    parse_device_node, parse_pointer_devices, parse_pressure_curve, select_tablet,
+    parse_device_node, parse_pointer_devices, parse_pressure_curve, select_button_nodes,
+    select_tablet,
 )
 
 XINPUT_LIST = """\
@@ -88,6 +89,22 @@ class DevicesTest(unittest.TestCase):
         t = select_tablet([pad, {**T505, "DEVNAME": "/dev/input/event27"}], POINTERS)
         self.assertEqual(t.nodes, ("/dev/input/event27",))
         self.assertIsNone(t.size_mm)
+
+
+    def test_button_nodes_are_key_devices_of_same_model(self):
+        ids = {"ID_VENDOR_ID": "08f2", "ID_MODEL_ID": "6811"}
+        devs = [
+            {**ids, "ID_INPUT_KEY": "1", "ID_INPUT_KEYBOARD": "1", "DEVNAME": "/dev/input/event12"},
+            {**ids, "ID_INPUT_TABLET": "1", "DEVNAME": "/dev/input/event13"},
+            {**ids, "ID_INPUT_MOUSE": "1", "DEVNAME": "/dev/input/event9"},
+            {**ids, "ID_INPUT_TABLET": "1", "ID_INPUT_TABLET_PAD": "1", "ID_INPUT_KEY": "1",
+             "DEVNAME": "/dev/input/event14"},
+            {**ids, "ID_INPUT_KEY": "1", "DEVNAME": "/dev/input/mouse2"},
+            {"ID_VENDOR_ID": "046d", "ID_MODEL_ID": "c31c", "ID_INPUT_KEY": "1",
+             "DEVNAME": "/dev/input/event4"},
+        ]
+        self.assertEqual(select_button_nodes(devs, "08f2", "6811"),
+                         ["/dev/input/event12", "/dev/input/event14"])
 
 
 if __name__ == "__main__":
