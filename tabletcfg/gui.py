@@ -1,5 +1,5 @@
 """Janela de configuração da mesa."""
-import dataclasses
+import copy
 
 import gi
 
@@ -10,6 +10,7 @@ from . import autorule, profiles  # noqa: E402
 from .apply import (  # noqa: E402
     NoTablet, PenNotReady, apply_curve, apply_profile, read_pen_curve, write_last,
 )
+from .buttons_ui import ButtonsPage  # noqa: E402
 from .canvas import AreaCanvas  # noqa: E402
 from .devices import find_tablet  # noqa: E402
 from .identify import show_identify  # noqa: E402
@@ -51,6 +52,7 @@ class MainWindow(Gtk.Window):
             self.store.profiles["padrao"] = self._new_profile()
         self.current = self.store.saved or sorted(self.store.profiles)[0]
         self._build()
+        self.buttons_page.set_tablet(self.tablet)
         self.reload_combo()
         self.load_profile()
         self.connect("focus-in-event", lambda *_: self._on_focus())
@@ -92,6 +94,8 @@ class MainWindow(Gtk.Window):
         notebook.append_page(top, Gtk.Label(label="Área de desenho"))
         self.pressure_page = PressurePage(self.on_pressure_change)
         notebook.append_page(self.pressure_page, Gtk.Label(label="Pressão"))
+        self.buttons_page = ButtonsPage(self.on_button_change, self.show_status)
+        notebook.append_page(self.buttons_page, Gtk.Label(label="Botões"))
 
         # Tela
         screen_frame = Gtk.Frame(label="Tela")
@@ -190,6 +194,7 @@ class MainWindow(Gtk.Window):
         self.keep_check.set_active(p.keep_aspect)
         self._busy = False
         self.pressure_page.set_curve(p.pressure_curve)
+        self.buttons_page.set_profile(p.buttons)
         self.sync_canvases()
 
     def sync_canvases(self):
@@ -211,6 +216,7 @@ class MainWindow(Gtk.Window):
         self.status_msgs = []
         self.refresh_hardware()
         self.sync_canvases()
+        self.buttons_page.set_tablet(self.tablet)
         self.show_status()
 
     def _on_focus(self):
@@ -279,6 +285,12 @@ class MainWindow(Gtk.Window):
         self.current = sorted(self.store.profiles)[combo.get_active()]
         self.load_profile()
         self._schedule_curve()
+
+    def on_button_change(self, button, action):
+        if action:
+            self.profile.buttons[button] = action
+        else:
+            self.profile.buttons.pop(button, None)
 
     # ---------- pressão (aplicada ao vivo) ----------
     def _read_pen_curve(self):
@@ -370,7 +382,7 @@ class MainWindow(Gtk.Window):
     def on_new(self, _b):
         name = self.ask_name("Novo perfil")
         if name:
-            self.store.profiles[name] = dataclasses.replace(self.profile)
+            self.store.profiles[name] = copy.deepcopy(self.profile)
             self.current = name
             self.reload_combo()
             self.load_profile()
@@ -432,6 +444,7 @@ class MainWindow(Gtk.Window):
         except TabletError as e:
             msgs.append(str(e))
         msgs += autorule.ensure_auto_apply(self.tablet, self.ask_password)
+        self.buttons_page.refresh_service()
         self.reload_combo()
         self.show_status(msgs)
 
