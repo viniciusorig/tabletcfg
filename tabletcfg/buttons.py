@@ -6,7 +6,10 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from .keys import ComboError, code_of, combo_label, format_combo, name_of, parse_combo
+from .evdev import BTN_LEFT, BTN_MIDDLE, BTN_RIGHT, EV_KEY, EV_REL, REL_HWHEEL, REL_WHEEL
+from .keys import (
+    MODIFIERS, ComboError, code_of, combo_label, format_combo, name_of, parse_combo,
+)
 from .proc import TabletError
 
 
@@ -184,3 +187,132 @@ def map_for(vendor: str | None, product: str | None, path: Path | None = None) -
         return None
     key = device_key(vendor, product)
     return load_maps(path).get(key) or BUILTIN.get(key)
+
+
+Event = tuple[int, int, int]  # (tipo, código, valor)
+_CLICK_CODES = {"left": BTN_LEFT, "middle": BTN_MIDDLE, "right": BTN_RIGHT}
+_SCROLL = {"up": (REL_WHEEL, 1), "down": (REL_WHEEL, -1),
+           "left": (REL_HWHEEL, -1), "right": (REL_HWHEEL, 1)}
+
+
+def _ordered(sig) -> list[int]:
+    """Modificadores primeiro, como um teclado de verdade pressionaria."""
+    return sorted(sig, key=lambda c: (c not in MODIFIERS, c))
+
+
+@dataclass
+class Output:
+    events: list[Event]
+    commands: list[str]
+
+
+class Remapper:
+    """Traduz pacotes de eventos do teclado da mesa nas ações do perfil."""
+
+    def __init__(self, bmap: ButtonMap, actions: dict[str, Action]):
+        self.bmap = bmap
+        self.actions = actions
+        self.active: dict[str, tuple[Signature, Action | None]] = {}
+
+    def set_actions(self, actions: dict[str, Action]) -> None:
+        self.actions = actions
+
+    def feed(self, frame: list[Event]) -> Output:
+        out = Output([], [])
+        keys = [(code, value) for typ, code, value in frame if typ == EV_KEY]
+        released: set[int] = set()  # teclas de botões já soltos neste pacote
+        for code, value in keys:
+            if value == 0 and code not in released:
+                released |= self._key_up(code, out)
+        downs = [code for code, value in keys if value == 1]
+        if downs:
+            button = self.bmap.lookup(frozenset(downs))
+            if button is not None and button not in self.active:
+                action = self.actions.get(button)
+                self.active[button] = (frozenset(downs), action)
+                self._press(frozenset(downs), action, out)
+            else:
+                out.events += [(EV_KEY, c, 1) for c in downs]
+        repeated = set()
+        for code, value in keys:
+            if value == 2:
+                button = self._owner(code)
+                if button is None:
+                    out.events.append((EV_KEY, code, 2))
+                elif button not in repeated:
+                    repeated.add(button)
+                    self._repeat(*self.active[button], out)
+        return out
+
+    def release_all(self) -> Output:
+        out = Output([], [])
+        for button in list(self.active):
+            sig, action = self.active.pop(button)
+            self._release(sig, action, out)
+        return out
+
+    def _owner(self, code: int) -> str | None:
+        return next((b for b, (sig, _) in self.active.items() if code in sig), None)
+
+    def _key_up(self, code: int, out: Output) -> Signature:
+        button = self._owner(code)
+        if button is None:
+            out.events.append((EV_KEY, code, 0))
+            return frozenset()
+        sig, action = self.active.pop(button)
+        self._release(sig, action, out)
+        return sig
+
+    @staticmethod
+    def _press(sig, action: Action | None, out: Output) -> None:
+        if action is None or action.kind == "key":
+            codes = _ordered(sig) if action is None else list(action.arg)
+            out.events += [(EV_KEY, c, 1) for c in codes]
+        elif action.kind == "click":
+            out.events.append((EV_KEY, _CLICK_CODES[action.arg], 1))
+        elif action.kind == "scroll":
+            out.events.append((EV_REL, *_SCROLL[action.arg]))
+        elif action.kind == "command":
+            out.commands.append(action.arg)
+
+    @staticmethod
+    def _release(sig, action: Action | None, out: Output) -> None:
+        if action is None or action.kind == "key":
+            codes = _ordered(sig) if action is None else list(action.arg)
+            out.events += [(EV_KEY, c, 0) for c in reversed(codes)]
+        elif action.kind == "click":
+            out.events.append((EV_KEY, _CLICK_CODES[action.arg], 0))
+
+    @staticmethod
+    def _repeat(sig, action: Action | None, out: Output) -> None:
+        if action is None or action.kind == "key":
+            codes = _ordered(sig) if action is None else list(action.arg)
+            out.events.append((EV_KEY, codes[-1], 2))
+        elif action.kind == "scroll":
+            out.events.append((EV_REL, *_SCROLL[action.arg]))
+
+
+class Learner:
+    """Assistente "Aprender botões": registra assinaturas em ordem, mesa e depois caneta."""
+
+    def __init__(self):
+        self.tablet: list[Signature] = []
+        self.pen: list[Signature] = []
+        self.phase = "tablet"
+
+    def next_phase(self) -> None:
+        self.phase = "pen"
+
+    def feed(self, frame: list[Event]):
+        downs = frozenset(code for typ, code, value in frame if typ == EV_KEY and value == 1)
+        if not downs:
+            return None
+        known = self.result().lookup(downs)
+        if known is not None:
+            return ("repeat", known)
+        target = self.tablet if self.phase == "tablet" else self.pen
+        target.append(downs)
+        return ("added", f"{self.phase}{len(target)}")
+
+    def result(self) -> ButtonMap:
+        return ButtonMap(tuple(self.tablet), tuple(self.pen))
