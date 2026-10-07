@@ -3,7 +3,7 @@ import argparse
 import sys
 
 from . import apply as ap
-from . import profiles
+from . import pressure, profiles
 from .devices import tablet_present
 from .monitors import read_layout
 from .proc import TabletError
@@ -76,13 +76,63 @@ def cmd_next(args):
 
 def cmd_reset(args):
     ap.reset()
-    print("Matriz restaurada (mesa em todos os monitores, sem rotação)")
+    print("Matriz e pressão restauradas (mesa em todos os monitores, sem rotação, curva linear)")
     return 0
 
 
 def cmd_identify(args):
     from .identify import show_identify
     show_identify(read_layout().monitors, standalone=True)
+    return 0
+
+
+def active_profile(store, explicit: str | None, last: str | None) -> str:
+    """Perfil afetado por 'pressure': --profile, senão o último aplicado, senão o salvo."""
+    if explicit is not None:
+        if explicit not in store.profiles:
+            raise TabletError(f"Perfil '{explicit}' não existe (veja 'tabletcfg list')")
+        return explicit
+    for name in (last, store.saved):
+        if name in store.profiles:
+            return name
+    raise TabletError("Nenhum perfil ativo; informe --profile NOME")
+
+
+def describe_curve(curve) -> str:
+    s = pressure.firmness_of(curve)
+    label = pressure.preset_label(curve)
+    if s is not None:
+        n = round(s * 100)
+        label += f" ({n:+d})" if n else " (0)"
+    return f"{label}  [{' '.join(f'{v:g}' for v in curve)}]"
+
+
+def cmd_pressure(args):
+    store = profiles.load()
+    last = ap.read_last()
+    name = active_profile(store, args.profile, last)
+    if args.value is None and args.curve is None:
+        print(f"Perfil '{name}': {describe_curve(store.profiles[name].pressure_curve)}")
+        pen = ap.read_pen_curve()
+        print(f"Caneta: {describe_curve(pen) if pen else 'caneta não detectada'}")
+        return 0
+    if args.value is not None and args.curve is not None:
+        raise TabletError("Use a firmeza ou --curve, não os dois")
+    if args.curve is not None:
+        curve = pressure.validate_curve(args.curve)
+    else:
+        curve = pressure.curve_for_firmness(pressure.parse_firmness(args.value))
+    store.profiles[name].pressure_curve = curve
+    profiles.save(store)
+    print(f"Pressão do perfil '{name}': {describe_curve(curve)}")
+    if name != active_profile(store, None, last):
+        print(f"(não é o perfil ativo; aplique com 'tabletcfg apply {name}')")
+        return 0
+    try:
+        ap.apply_curve(curve)
+    except (ap.NoTablet, ap.PenNotReady) as e:
+        print(f"aviso: {e}\naviso: aproxime a caneta e rode 'tabletcfg apply {name}'",
+              file=sys.stderr)
     return 0
 
 
@@ -119,7 +169,14 @@ def build_parser():
                    help="espera a caneta aparecer no X e aplica (usado pelo serviço)")
     a.set_defaults(func=cmd_apply)
     sub.add_parser("next", help="aplica o próximo perfil").set_defaults(func=cmd_next)
-    sub.add_parser("reset", help="remove rotação e limites").set_defaults(func=cmd_reset)
+    pr = sub.add_parser("pressure", help="mostra ou ajusta a curva de pressão da caneta")
+    pr.add_argument("value", nargs="?", metavar="FIRMEZA",
+                    help="muito-macia, macia, normal, firme, muito-firme ou -100..100")
+    pr.add_argument("--curve", nargs=4, type=float, metavar=("X1", "Y1", "X2", "Y2"),
+                    help="curva livre (pontos de controle em 0..1)")
+    pr.add_argument("--profile", help="perfil a alterar (padrão: o ativo)")
+    pr.set_defaults(func=cmd_pressure)
+    sub.add_parser("reset", help="remove rotação, limites e curva de pressão").set_defaults(func=cmd_reset)
     sub.add_parser("identify", help="mostra o número de cada monitor").set_defaults(func=cmd_identify)
     sub.add_parser("install-rule", help="instala a reaplicação automática").set_defaults(func=cmd_install_rule)
     sub.add_parser("uninstall-rule", help="remove a reaplicação automática").set_defaults(func=cmd_uninstall_rule)
