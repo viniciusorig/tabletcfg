@@ -2,7 +2,7 @@ import unittest
 
 from tabletcfg.pressure import (
     LINEAR, PressureError, bezier_points, curve_for_firmness, drag_point, firmness_of,
-    from_prop, parse_firmness, preset_label, to_prop, validate_curve,
+    from_prop, nearest_point, parse_firmness, preset_label, to_prop, validate_curve,
 )
 
 
@@ -80,6 +80,17 @@ class DragTest(unittest.TestCase):
 
     def test_second_x_cannot_pass_first(self):
         self.assertEqual(drag_point((0.4, 0.2, 0.8, 0.8), 1, 0.1, 0.5), (0.4, 0.2, 0.4, 0.5))
+
+
+class NearestTest(unittest.TestCase):
+    def test_picks_closest_control_point(self):
+        self.assertEqual(nearest_point((0.2, 0.2, 0.8, 0.8), 0.25, 0.1), 0)
+        self.assertEqual(nearest_point((0.2, 0.2, 0.8, 0.8), 0.7, 0.9), 1)
+
+    def test_coincident_points_prefer_direction_of_free_room(self):
+        # Pontos sobrepostos: à direita pega o 2º (só ele pode ir para a direita).
+        self.assertEqual(nearest_point((0.5, 0.5, 0.5, 0.5), 0.6, 0.5), 1)
+        self.assertEqual(nearest_point((0.5, 0.5, 0.5, 0.5), 0.4, 0.5), 0)
 
 
 class PropTest(unittest.TestCase):

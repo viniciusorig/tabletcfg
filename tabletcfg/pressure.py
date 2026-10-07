@@ -89,6 +89,16 @@ def drag_point(curve: Curve, index: int, x: float, y: float) -> Curve:
     return (x1, y1, max(x, x1), y)
 
 
+def nearest_point(curve: Curve, x: float, y: float) -> int:
+    """Ponto de controle (0 ou 1) mais perto de (x, y); empate decide pelo lado."""
+    x1, y1, x2, y2 = curve
+    d0 = (x - x1) ** 2 + (y - y1) ** 2
+    d1 = (x - x2) ** 2 + (y - y2) ** 2
+    if abs(d0 - d1) < 1e-12:
+        return 1 if x >= x2 else 0
+    return 0 if d0 < d1 else 1
+
+
 def to_prop(curve: Curve) -> list[float]:
     return [0, 0, *curve, 1, 1]
 
