@@ -2,7 +2,7 @@ import unittest
 
 from tabletcfg.pressure import (
     LINEAR, PressureError, bezier_points, curve_for_firmness, drag_point, firmness_of,
-    from_prop, nearest_point, parse_firmness, preset_label, to_prop, validate_curve,
+    axis_pressure, from_prop, nearest_point, parse_firmness, preset_label, to_prop, validate_curve,
 )
 
 
@@ -91,6 +91,20 @@ class NearestTest(unittest.TestCase):
         # Pontos sobrepostos: à direita pega o 2º (só ele pode ir para a direita).
         self.assertEqual(nearest_point((0.5, 0.5, 0.5, 0.5), 0.6, 0.5), 1)
         self.assertEqual(nearest_point((0.5, 0.5, 0.5, 0.5), 0.4, 0.5), 0)
+
+
+class AxisTest(unittest.TestCase):
+    def test_signal_events_return_bare_value_or_none(self):
+        # Eventos de sinal (EventButton/EventMotion) usam o override strip_boolean_result.
+        self.assertEqual(axis_pressure(0.42), 0.42)
+        self.assertIsNone(axis_pressure(None))
+
+    def test_generic_event_returns_pair(self):
+        self.assertEqual(axis_pressure((True, 0.3)), 0.3)
+        self.assertIsNone(axis_pressure((False, 0.0)))
+
+    def test_clamped(self):
+        self.assertEqual(axis_pressure(1.2), 1.0)
 
 
 class PropTest(unittest.TestCase):

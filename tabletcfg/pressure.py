@@ -99,6 +99,18 @@ def nearest_point(curve: Curve, x: float, y: float) -> int:
     return 0 if d0 < d1 else 1
 
 
+def axis_pressure(result) -> float | None:
+    """Pressão 0..1 a partir do retorno de get_axis: valor/None (eventos de sinal,
+    override do PyGObject) ou (ok, valor) (Gdk.Event genérico)."""
+    if isinstance(result, tuple):
+        ok, result = result
+        if not ok:
+            return None
+    if result is None:
+        return None
+    return max(0.0, min(1.0, float(result)))
+
+
 def to_prop(curve: Curve) -> list[float]:
     return [0, 0, *curve, 1, 1]
 

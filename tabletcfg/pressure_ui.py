@@ -122,8 +122,7 @@ class PressureTest(Gtk.DrawingArea):
 
     @staticmethod
     def _pressure(ev):
-        ok, value = ev.get_axis(Gdk.AxisUse.PRESSURE)
-        return max(0.0, min(1.0, value)) if ok else None
+        return pressure.axis_pressure(ev.get_axis(Gdk.AxisUse.PRESSURE))
 
     def _add(self, ev):
         p = self._pressure(ev)
