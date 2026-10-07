@@ -4,19 +4,24 @@ import dataclasses
 import gi
 
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk  # noqa: E402
+from gi.repository import GLib, Gtk  # noqa: E402
 
 from . import autorule, profiles  # noqa: E402
-from .apply import apply_profile, write_last  # noqa: E402
+from .apply import (  # noqa: E402
+    NoTablet, PenNotReady, apply_curve, apply_profile, read_pen_curve, write_last,
+)
 from .canvas import AreaCanvas  # noqa: E402
 from .devices import find_tablet  # noqa: E402
 from .identify import show_identify  # noqa: E402
 from .matrix import fit_tablet_area  # noqa: E402
 from .monitors import Layout, find_monitor, read_layout, resolve_target  # noqa: E402
+from .pressure_ui import PressurePage  # noqa: E402
 from .proc import TabletError  # noqa: E402
 
 FULL = (0.0, 0.0, 1.0, 1.0)
 DEFAULT_MM = (160.0, 100.0)
+CURVE_DELAY_MS = 100  # agrupa as mudanças de curva durante um arrasto
+PEN_WAIT = "Aproxime a caneta da mesa para aplicar a pressão"
 CROP_TIP = ("Área da mesa menor que 100%: a caneta fora da área ainda move o cursor "
             "para fora do retângulo de tela (limitação do libinput).")
 
@@ -37,6 +42,11 @@ class MainWindow(Gtk.Window):
             self.load_failed = True
             self.status_msgs.append(f"Erro ao ler perfis (uma cópia .bak será feita ao salvar): {e}")
         self.refresh_hardware()
+        # Curva que a caneta tinha ao abrir; volta ao fechar se a mudança não foi salva.
+        self.original_curve = self._read_pen_curve()
+        self.curve_dirty = False
+        self.curve_waiting = False
+        self._curve_timer = None
         if not self.store.profiles:
             self.store.profiles["padrao"] = self._new_profile()
         self.current = self.store.saved or sorted(self.store.profiles)[0]
@@ -44,6 +54,7 @@ class MainWindow(Gtk.Window):
         self.reload_combo()
         self.load_profile()
         self.connect("focus-in-event", lambda *_: self._on_focus())
+        self.connect("destroy", lambda *_: self._restore_curve())
 
     # ---------- estado ----------
     @property
@@ -75,8 +86,12 @@ class MainWindow(Gtk.Window):
     def _build(self):
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, border_width=10)
         self.add(root)
-        top = Gtk.Box(spacing=10)
-        root.pack_start(top, True, True, 0)
+        notebook = Gtk.Notebook()
+        root.pack_start(notebook, True, True, 0)
+        top = Gtk.Box(spacing=10, border_width=6)
+        notebook.append_page(top, Gtk.Label(label="Área de desenho"))
+        self.pressure_page = PressurePage(self.on_pressure_change)
+        notebook.append_page(self.pressure_page, Gtk.Label(label="Pressão"))
 
         # Tela
         screen_frame = Gtk.Frame(label="Tela")
@@ -174,6 +189,7 @@ class MainWindow(Gtk.Window):
         self.rot_buttons[p.rotation].set_active(True)
         self.keep_check.set_active(p.keep_aspect)
         self._busy = False
+        self.pressure_page.set_curve(p.pressure_curve)
         self.sync_canvases()
 
     def sync_canvases(self):
@@ -198,6 +214,8 @@ class MainWindow(Gtk.Window):
         self.show_status()
 
     def _on_focus(self):
+        if self.curve_waiting:
+            self._flush_curve()
         try:
             self.layout = read_layout()
         except TabletError:
@@ -260,6 +278,54 @@ class MainWindow(Gtk.Window):
             return
         self.current = sorted(self.store.profiles)[combo.get_active()]
         self.load_profile()
+        self._schedule_curve()
+
+    # ---------- pressão (aplicada ao vivo) ----------
+    def _read_pen_curve(self):
+        try:
+            return read_pen_curve(self.tablet) if self.tablet else None
+        except TabletError:
+            return None
+
+    def on_pressure_change(self, curve):
+        self.profile.pressure_curve = curve
+        self._schedule_curve()
+
+    def _schedule_curve(self):
+        if self._curve_timer is None:
+            self._curve_timer = GLib.timeout_add(CURVE_DELAY_MS, self._flush_curve)
+
+    def _flush_curve(self):
+        self._curve_timer = None
+        try:
+            if not (self.tablet and self.tablet.xinput_ids):
+                self.tablet = find_tablet()  # a caneta pode ter aparecido no X agora
+            if self.original_curve is None:
+                self.original_curve = self._read_pen_curve()
+            apply_curve(self.profile.pressure_curve, self.tablet)
+        except (NoTablet, PenNotReady):
+            if not self.curve_waiting:
+                self.curve_waiting = True
+                self.show_status([PEN_WAIT])
+            return False
+        except TabletError as e:
+            self.show_status([str(e)])
+            return False
+        self.curve_dirty = True
+        if self.curve_waiting:
+            self.curve_waiting = False
+            self.show_status([])
+        return False
+
+    def _restore_curve(self):
+        if self._curve_timer is not None:
+            GLib.source_remove(self._curve_timer)
+            self._curve_timer = None
+        if self.curve_dirty and self.original_curve is not None:
+            try:
+                apply_curve(self.original_curve, self.tablet)
+            except TabletError:
+                pass
 
     def ask_password(self, retry: bool):
         """Pede a senha do sudo; devolve None se cancelado. A senha não é guardada."""
@@ -339,6 +405,8 @@ class MainWindow(Gtk.Window):
         try:
             self.tablet = find_tablet()
             warns = self._apply()
+            self.curve_dirty = True
+            self.curve_waiting = False
             self.show_status([f"Perfil '{self.current}' aplicado (teste, não salvo)", *warns])
         except TabletError as e:
             self.show_status([str(e)])
@@ -355,9 +423,12 @@ class MainWindow(Gtk.Window):
             self.show_status([f"Não foi possível salvar: {e}"])
             return
         msgs.append(f"Perfil '{self.current}' salvo e definido como automático")
+        self.original_curve = self.profile.pressure_curve  # salvo: fechar não desfaz mais
+        self.curve_dirty = False
         try:
             self.tablet = find_tablet()
             msgs += self._apply()
+            self.curve_waiting = False
         except TabletError as e:
             msgs.append(str(e))
         msgs += autorule.ensure_auto_apply(self.tablet, self.ask_password)
