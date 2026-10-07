@@ -30,6 +30,16 @@ class ProfilesTest(unittest.TestCase):
         self.assertEqual(back.profiles["desenho"], p)
         self.assertEqual(back.profiles["Ação \"rápida\""].target, "all")
 
+    def test_pressure_curve_round_trip(self):
+        p = Profile(target="all", pressure_curve=(0.4, 0.0, 1.0, 0.6))
+        save(Store(None, {"a": p}), self.path)
+        self.assertEqual(load(self.path).profiles["a"].pressure_curve, (0.4, 0.0, 1.0, 0.6))
+
+    def test_old_profile_without_curve_is_linear(self):
+        self.path.parent.mkdir(parents=True)
+        self.path.write_text("[profiles.a]\nrotation = 0\n")
+        self.assertEqual(load(self.path).profiles["a"].pressure_curve, (0.0, 0.0, 1.0, 1.0))
+
     def test_save_is_atomic_no_temp_left(self):
         save(Store(None, {"a": Profile()}), self.path)
         self.assertEqual([f.name for f in self.path.parent.iterdir()], ["profiles.toml"])
@@ -48,6 +58,8 @@ class ProfilesTest(unittest.TestCase):
             "tablet_area = [-0.1, 0.0, 0.5, 0.5]",
             "tablet_area = [0.0, 0.0, 1.0]",
             'keep_aspect = "sim"',
+            "pressure_curve = [0.9, 0.0, 0.1, 1.0]",
+            "pressure_curve = [0.0, 0.0, 1.0]",
         ]
         for line in bad:
             with self.subTest(line=line):

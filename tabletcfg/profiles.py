@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .matrix import MIN_FRAC, Rect
+from .pressure import LINEAR, Curve, PressureError, validate_curve
 from .proc import TabletError
 
 TARGETS = ("monitor", "all")
@@ -29,6 +30,7 @@ class Profile:
     tablet_area: Rect = FULL
     rotation: int = 0
     keep_aspect: bool = True
+    pressure_curve: Curve = LINEAR
 
 
 @dataclass
@@ -73,6 +75,14 @@ def validate(name: str, p: Profile) -> None:
         raise ProfileError(f"Perfil '{name}': monitor_id/monitor_name devem ser texto")
     _check_area(name, "screen_area", p.screen_area)
     _check_area(name, "tablet_area", p.tablet_area)
+    _check_curve(name, p.pressure_curve)
+
+
+def _check_curve(name: str, curve) -> Curve:
+    try:
+        return validate_curve(curve)
+    except PressureError as e:
+        raise ProfileError(f"Perfil '{name}': pressure_curve: {e}") from None
 
 
 def _from_dict(name: str, d: dict) -> Profile:
@@ -86,10 +96,12 @@ def _from_dict(name: str, d: dict) -> Profile:
         tablet_area=d.get("tablet_area", FULL),
         rotation=d.get("rotation", 0),
         keep_aspect=d.get("keep_aspect", True),
+        pressure_curve=d.get("pressure_curve", LINEAR),
     )
     validate(name, p)
     p.screen_area = _check_area(name, "screen_area", p.screen_area)
     p.tablet_area = _check_area(name, "tablet_area", p.tablet_area)
+    p.pressure_curve = _check_curve(name, p.pressure_curve)
     return p
 
 
@@ -132,6 +144,7 @@ def dumps(store: Store) -> str:
             f"tablet_area = {_area(p.tablet_area)}",
             f"rotation = {p.rotation}",
             f"keep_aspect = {'true' if p.keep_aspect else 'false'}",
+            f"pressure_curve = {_area(p.pressure_curve)}",
         ]
     return "\n".join(out) + "\n"
 
