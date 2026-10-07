@@ -2,12 +2,14 @@
 import json
 import math
 import os
+import re
 import shutil
 import tempfile
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .buttons import ButtonError, format_action, parse_action
 from .matrix import MIN_FRAC, Rect
 from .pressure import LINEAR, Curve, PressureError, validate_curve
 from .proc import TabletError
@@ -15,6 +17,7 @@ from .proc import TabletError
 TARGETS = ("monitor", "all")
 ROTATIONS = (0, 90, 180, 270)
 FULL: Rect = (0.0, 0.0, 1.0, 1.0)
+BUTTON_ID_RE = re.compile(r"(tablet|pen)[1-9]\d*")
 
 
 class ProfileError(TabletError):
@@ -31,6 +34,7 @@ class Profile:
     rotation: int = 0
     keep_aspect: bool = True
     pressure_curve: Curve = LINEAR
+    buttons: dict[str, str] = field(default_factory=dict)  # "tablet1" → "key ctrl+z"
 
 
 @dataclass
@@ -76,6 +80,22 @@ def validate(name: str, p: Profile) -> None:
     _check_area(name, "screen_area", p.screen_area)
     _check_area(name, "tablet_area", p.tablet_area)
     _check_curve(name, p.pressure_curve)
+    _check_buttons(name, p.buttons)
+
+
+def _check_buttons(name: str, buttons) -> dict[str, str]:
+    if not isinstance(buttons, dict):
+        raise ProfileError(f"Perfil '{name}': buttons deve ser uma tabela")
+    out = {}
+    for button, action in buttons.items():
+        if not BUTTON_ID_RE.fullmatch(button):
+            raise ProfileError(f"Perfil '{name}': botão desconhecido '{button}' "
+                               f"(use tablet1, tablet2…, pen1, pen2…)")
+        try:
+            out[button] = format_action(parse_action(action))
+        except ButtonError as e:
+            raise ProfileError(f"Perfil '{name}', botão {button}: {e}") from None
+    return out
 
 
 def _check_curve(name: str, curve) -> Curve:
@@ -97,11 +117,13 @@ def _from_dict(name: str, d: dict) -> Profile:
         rotation=d.get("rotation", 0),
         keep_aspect=d.get("keep_aspect", True),
         pressure_curve=d.get("pressure_curve", LINEAR),
+        buttons=d.get("buttons", {}),
     )
     validate(name, p)
     p.screen_area = _check_area(name, "screen_area", p.screen_area)
     p.tablet_area = _check_area(name, "tablet_area", p.tablet_area)
     p.pressure_curve = _check_curve(name, p.pressure_curve)
+    p.buttons = _check_buttons(name, p.buttons)
     return p
 
 
@@ -146,7 +168,15 @@ def dumps(store: Store) -> str:
             f"keep_aspect = {'true' if p.keep_aspect else 'false'}",
             f"pressure_curve = {_area(p.pressure_curve)}",
         ]
+        if p.buttons:
+            out += ["", f"[profiles.{_s(name)}.buttons]"]
+            out += [f"{b} = {_s(a)}" for b, a in sorted(p.buttons.items(), key=_button_order)]
     return "\n".join(out) + "\n"
+
+
+def _button_order(item):
+    m = re.fullmatch(r"(\D+)(\d+)", item[0])
+    return (m.group(1) != "tablet", int(m.group(2))) if m else (True, 0)
 
 
 def save(store: Store, path: Path | None = None) -> None:

@@ -40,6 +40,19 @@ class ProfilesTest(unittest.TestCase):
         self.path.write_text("[profiles.a]\nrotation = 0\n")
         self.assertEqual(load(self.path).profiles["a"].pressure_curve, (0.0, 0.0, 1.0, 1.0))
 
+    def test_buttons_round_trip(self):
+        p = Profile(target="all", buttons={"tablet1": "key ctrl+z", "pen2": "command echo 'oi'"})
+        store = Store("a", {"a": p, "b": Profile(target="all")})
+        save(store, self.path)
+        back = load(self.path)
+        self.assertEqual(back.profiles["a"].buttons, p.buttons)
+        self.assertEqual(back.profiles["b"].buttons, {})
+
+    def test_buttons_are_normalized(self):
+        self.path.parent.mkdir(parents=True)
+        self.path.write_text('[profiles.a.buttons]\ntablet3 = "key  Z+Ctrl"\n')
+        self.assertEqual(load(self.path).profiles["a"].buttons, {"tablet3": "key ctrl+z"})
+
     def test_save_is_atomic_no_temp_left(self):
         save(Store(None, {"a": Profile()}), self.path)
         self.assertEqual([f.name for f in self.path.parent.iterdir()], ["profiles.toml"])
@@ -60,6 +73,9 @@ class ProfilesTest(unittest.TestCase):
             'keep_aspect = "sim"',
             "pressure_curve = [0.9, 0.0, 0.1, 1.0]",
             "pressure_curve = [0.0, 0.0, 1.0]",
+            'buttons = "x"',
+            'buttons = { tablet1 = "voar" }',
+            'buttons = { botao1 = "disable" }',
         ]
         for line in bad:
             with self.subTest(line=line):
