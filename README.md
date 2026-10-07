@@ -60,7 +60,20 @@ Nesse caso, o atalho de menu e a regra do uinput não são instalados. Copie-os
     install -Dm644 data/tabletcfg.desktop ~/.local/share/applications/tabletcfg.desktop
     sudo install -Dm644 data/70-tabletcfg-uinput.rules /etc/udev/rules.d/70-tabletcfg-uinput.rules
 
-**Pelos pacotes:** veja [Empacotamento](#empacotamento) (AUR, apt e dnf).
+**Debian 13+/Ubuntu 24.04+:** baixe o `.deb` da
+[release mais recente](https://github.com/viniciusorig/tabletcfg/releases) e
+instale:
+
+    sudo apt install ./tabletcfg_0.1.0-1_all.deb
+
+**Arch Linux:** enquanto o pacote não está no AUR, use o PKGBUILD do
+repositório:
+
+    git clone https://github.com/viniciusorig/tabletcfg.git
+    cd tabletcfg/packaging/aur
+    makepkg -si
+
+Detalhes de cada formato em [Empacotamento](#empacotamento).
 
 ## Uso
 
@@ -240,11 +253,24 @@ Python ≥ 3.11: Debian 12+ ou Ubuntu 23.04+.
 
     sudo apt install build-essential devscripts debhelper dh-python \
         pybuild-plugin-pyproject python3-all python3-setuptools python3-wheel
-    git archive --prefix=tabletcfg-0.1.0/ -o ../tabletcfg_0.1.0.orig.tar.gz v0.1.0
+    curl -L -o ../tabletcfg_0.1.0.orig.tar.gz \
+        https://github.com/viniciusorig/tabletcfg/archive/refs/tags/v0.1.0.tar.gz
     cp -r packaging/debian debian
     dpkg-buildpackage -us -uc          # gera ../tabletcfg_0.1.0-1_all.deb
     sudo apt install ../tabletcfg_0.1.0-1_all.deb
     lintian ../tabletcfg_0.1.0-1_*.changes   # opcional
+
+Fora do Debian (por exemplo, no Arch), gere o pacote num contêiner:
+
+    docker run --rm -v "$PWD":/src:ro -v "$PWD/dist":/out debian:trixie bash -c '
+      apt-get update && apt-get install -y build-essential debhelper dh-python \
+        pybuild-plugin-pyproject python3-all python3-setuptools python3-wheel curl &&
+      mkdir /build && cd /build &&
+      curl -L -o tabletcfg_0.1.0.orig.tar.gz \
+        https://github.com/viniciusorig/tabletcfg/archive/refs/tags/v0.1.0.tar.gz &&
+      tar xzf tabletcfg_0.1.0.orig.tar.gz && cd tabletcfg-0.1.0 &&
+      cp -r packaging/debian debian && dpkg-buildpackage -us -uc &&
+      cp ../tabletcfg_0.1.0-1_all.deb /out/ && chown '"$(id -u)"' /out/*.deb'
 
 Caminhos de distribuição:
 - **PPA no Launchpad (Ubuntu):** assine o pacote fonte com `debuild -S -sa` e

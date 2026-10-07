@@ -19,6 +19,6 @@ pkgbase = tabletcfg
 	depends = systemd
 	depends = sudo
 	source = tabletcfg-0.1.0.tar.gz::https://github.com/viniciusorig/tabletcfg/archive/refs/tags/v0.1.0.tar.gz
-	sha256sums = SKIP
+	sha256sums = bb6fc6df6816e2ab366a042a96c827511ff549385f2c3e9d4d264e7d277967ab
 
 pkgname = tabletcfg

@@ -10,7 +10,7 @@ depends=('python' 'python-gobject' 'gtk3' 'python-pyudev' 'xorg-xinput' 'xorg-xr
          'xf86-input-libinput' 'systemd' 'sudo')
 makedepends=('python-build' 'python-installer' 'python-setuptools' 'python-wheel')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')  # troque pelo hash real com `updpkgsums` depois de publicar a tag
+sha256sums=('bb6fc6df6816e2ab366a042a96c827511ff549385f2c3e9d4d264e7d277967ab')
 
 build() {
   cd "$pkgname-$pkgver"
