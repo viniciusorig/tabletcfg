@@ -3,7 +3,7 @@ import unittest
 from unittest import mock
 
 from tabletcfg.apply import (
-    PenNotReady, apply_profile, compute_for_profile, follow_apply, next_name, parse_env,
+    PenNotReady, apply_curve, apply_profile, reset, compute_for_profile, follow_apply, next_name, parse_env,
     refresh_session,
 )
 from tabletcfg.devices import Tablet
@@ -108,9 +108,36 @@ class ApplyProfileTest(unittest.TestCase):
 
     def test_sets_matrix_on_every_pen_device(self):
         t = Tablet((23, 30), "T505", ("/dev/input/event27",), "08f2", "6811", (204.0, 136.0))
-        with mock.patch("tabletcfg.apply.set_ctm") as set_ctm:
+        with mock.patch("tabletcfg.apply.set_ctm") as set_ctm, \
+             mock.patch("tabletcfg.apply.read_curve", return_value=None):
             apply_profile(Profile(target="all", keep_aspect=False), t, LAYOUT)
         self.assertEqual([c.args[0] for c in set_ctm.call_args_list], [23, 30])
+
+
+    def test_sets_curve_only_where_property_exists(self):
+        t = Tablet((23, 30), "T505", ("/dev/input/event27",), "08f2", "6811", (204.0, 136.0))
+        curves = {23: (0.0, 0.0, 1.0, 1.0), 30: None}
+        with mock.patch("tabletcfg.apply.set_ctm"), \
+             mock.patch("tabletcfg.apply.read_curve", side_effect=curves.get), \
+             mock.patch("tabletcfg.apply.set_curve") as set_curve:
+            apply_profile(Profile(target="all", pressure_curve=(0.4, 0.0, 1.0, 0.6)), t, LAYOUT)
+        set_curve.assert_called_once_with(23, (0.4, 0.0, 1.0, 0.6))
+
+    def test_apply_curve_reports_pen_without_property(self):
+        t = Tablet((30,), "T505", ("/dev/input/event27",), "08f2", "6811", None)
+        with mock.patch("tabletcfg.apply.read_curve", return_value=None), \
+             mock.patch("tabletcfg.apply.set_curve") as set_curve:
+            with self.assertRaises(PenNotReady):
+                apply_curve((0.4, 0.0, 1.0, 0.6), t)
+        set_curve.assert_not_called()
+
+    def test_reset_restores_linear_curve(self):
+        t = Tablet((23,), "T505", ("/dev/input/event27",), "08f2", "6811", None)
+        with mock.patch("tabletcfg.apply.set_ctm"), \
+             mock.patch("tabletcfg.apply.read_curve", return_value=(0.4, 0, 1, 0.6)), \
+             mock.patch("tabletcfg.apply.set_curve") as set_curve:
+            reset(t)
+        set_curve.assert_called_once_with(23, (0.0, 0.0, 1.0, 1.0))
 
 
 if __name__ == "__main__":

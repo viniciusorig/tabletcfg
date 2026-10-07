@@ -1,6 +1,8 @@
 import unittest
 
-from tabletcfg.devices import parse_device_node, parse_pointer_devices, select_tablet
+from tabletcfg.devices import (
+    parse_device_node, parse_pointer_devices, parse_pressure_curve, select_tablet,
+)
 
 XINPUT_LIST = """\
 ⎡ Virtual core pointer                    \tid=2\t[master pointer  (3)]
@@ -44,6 +46,16 @@ class DevicesTest(unittest.TestCase):
             (22, "SZ PING-IT INC.  T505 Graphic Tablet Mouse"),
             (23, "SZ PING-IT INC.  T505 Graphic Tablet Pen (0)"),
         ])
+
+    def test_parse_pressure_curve(self):
+        text = ("Device 'T505 Pen (0)':\n"
+                '\tlibinput Tablet Tool Pressurecurve (625):\t0.000000, 0.000000, 0.400000, '
+                '0.000000, 1.000000, 0.600000, 1.000000, 1.000000\n'
+                '\tDevice Node (281):\t"/dev/input/event27"\n')
+        self.assertEqual(parse_pressure_curve(text), (0.4, 0.0, 1.0, 0.6))
+
+    def test_parse_pressure_curve_absent(self):
+        self.assertIsNone(parse_pressure_curve('\tDevice Node (281):\t"/dev/input/event5"\n'))
 
     def test_parse_device_node(self):
         self.assertEqual(parse_device_node(PROPS), "/dev/input/event27")

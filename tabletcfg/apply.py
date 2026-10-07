@@ -4,10 +4,11 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from .devices import Tablet, find_tablet, set_ctm
+from .devices import Tablet, find_tablet, read_curve, set_ctm, set_curve
 from .matrix import IDENTITY, compute_ctm
 from .monitors import Layout, read_layout, resolve_target
 from .proc import TabletError, run
+from .pressure import LINEAR, Curve
 from .profiles import Profile
 
 
@@ -53,16 +54,43 @@ def _set_all(tablet: Tablet, matrix: list[float]) -> None:
         set_ctm(xid, matrix)
 
 
+def _set_curve_all(tablet: Tablet, curve: Curve) -> int:
+    """Aplica a curva nos dispositivos que têm pressão; devolve quantos."""
+    ids = [xid for xid in tablet.xinput_ids if read_curve(xid) is not None]
+    for xid in ids:
+        set_curve(xid, curve)
+    return len(ids)
+
+
+def apply_curve(curve: Curve, tablet: Tablet | None = None) -> None:
+    if not _set_curve_all(_require(tablet), curve):
+        raise PenNotReady("A caneta ainda não está disponível para a pressão; "
+                          "aproxime-a da mesa e tente de novo")
+
+
+def read_pen_curve(tablet: Tablet | None = None) -> Curve | None:
+    tablet = tablet or find_tablet()
+    for xid in tablet.xinput_ids if tablet else ():
+        if (curve := read_curve(xid)) is not None:
+            return curve
+    return None
+
+
 def apply_profile(profile: Profile, tablet: Tablet | None = None,
                   layout: Layout | None = None) -> ApplyResult:
     tablet = _require(tablet)
     res = compute_for_profile(profile, layout or read_layout(), tablet.size_mm)
     _set_all(tablet, res.matrix)
+    if not _set_curve_all(tablet, profile.pressure_curve):
+        res.warnings.append("Nenhum dispositivo da caneta aceita curva de pressão; "
+                            "pressão não aplicada")
     return res
 
 
 def reset(tablet: Tablet | None = None) -> None:
-    _set_all(_require(tablet), IDENTITY)
+    tablet = _require(tablet)
+    _set_all(tablet, IDENTITY)
+    _set_curve_all(tablet, LINEAR)
 
 
 def parse_env(text: str) -> dict[str, str]:

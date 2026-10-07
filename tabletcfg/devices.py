@@ -7,11 +7,14 @@ udev e a lista de ids do xinput pode estar vazia.
 import re
 from dataclasses import dataclass
 
+from .pressure import Curve, from_prop, to_prop
 from .proc import run
 
 SLAVE_POINTER_RE = re.compile(r"↳\s+(.*?)\s+id=(\d+)\s+\[slave\s+pointer")
 NODE_RE = re.compile(r'Device Node \(\d+\):\s+"([^"]+)"')
 CTM_PROP = "Coordinate Transformation Matrix"
+PRESSURE_PROP = "libinput Tablet Tool Pressurecurve"
+PRESSURE_RE = re.compile(re.escape(PRESSURE_PROP) + r" \(\d+\):\s+(.*)")
 
 
 @dataclass(frozen=True)
@@ -35,6 +38,16 @@ def parse_pointer_devices(text: str) -> list[tuple[int, str]]:
 def parse_device_node(text: str) -> str | None:
     m = NODE_RE.search(text)
     return m.group(1) if m else None
+
+
+def parse_pressure_curve(text: str) -> Curve | None:
+    m = PRESSURE_RE.search(text)
+    if not m:
+        return None
+    try:
+        return from_prop([float(v) for v in m.group(1).split(",")])
+    except ValueError:
+        return None
 
 
 def _size(props: dict) -> tuple[float, float] | None:
@@ -95,3 +108,13 @@ def find_tablet() -> Tablet | None:
 
 def set_ctm(xinput_id: int, matrix: list[float]) -> None:
     run(["xinput", "set-prop", str(xinput_id), CTM_PROP, *(f"{v:.6f}" for v in matrix)])
+
+
+def read_curve(xinput_id: int) -> Curve | None:
+    """Curva atual do dispositivo, ou None se ele não tem a propriedade de pressão."""
+    return parse_pressure_curve(run(["xinput", "list-props", str(xinput_id)], check=False))
+
+
+def set_curve(xinput_id: int, curve: Curve) -> None:
+    run(["xinput", "set-prop", str(xinput_id), PRESSURE_PROP,
+         *(f"{v:.6f}" for v in to_prop(curve))])
